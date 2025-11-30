@@ -1,0 +1,44 @@
+version: '3.9'
+
+services:
+  product_service:
+    build: ./product_service
+    container_name: product_service
+    ports:
+      - "5001:5001"
+    volumes:
+      - product_service_data:/data
+    restart: unless-stopped
+
+  user_service:
+    build: ./user_service
+    container_name: user_service
+    ports:
+      - "5002:5002"
+    volumes:
+      - user_service_data:/data
+    restart: unless-stopped
+
+  orders_service:
+    build: ./orders_service
+    container_name: orders_service
+    ports:
+      - "5003:5003"
+    volumes:
+      - orders_service_data:/data
+    restart: unless-stopped
+
+  reviews_service:
+    build: ./reviews_service
+    container_name: reviews_service
+    ports:
+      - "5004:5004"
+    volumes:
+      - reviews_service_data:/data
+    restart: unless-stopped
+
+volumes:
+  product_service_data:
+  user_service_data:
+  orders_service_data:
+  reviews_service_data:
