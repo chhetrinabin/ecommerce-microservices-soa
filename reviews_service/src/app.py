@@ -1,6 +1,6 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, abort
 from flask_cors import CORS
-from models import db, Review
+from .models import db, Review
 import os
 
 def create_app():
@@ -31,7 +31,9 @@ def create_app():
 
     @app.route("/reviews/<int:rid>", methods=["GET"])
     def get_review(rid):
-        r = Review.query.get_or_404(rid)
+        r = db.session.get(Review, rid)
+        if r is None:
+            abort(404)
         return jsonify(r.to_dict())
 
     @app.route("/reviews", methods=["POST"])
@@ -52,7 +54,9 @@ def create_app():
 
     @app.route("/reviews/<int:rid>", methods=["PUT", "PATCH"])
     def update_review(rid):
-        r = Review.query.get_or_404(rid)
+        r = db.session.get(Review, rid)
+        if r is None:
+            abort(404)
         data = request.get_json(force=True)
         if "comment" in data:
             r.comment = data["comment"]
@@ -66,7 +70,9 @@ def create_app():
 
     @app.route("/reviews/<int:rid>", methods=["DELETE"])
     def delete_review(rid):
-        r = Review.query.get_or_404(rid)
+        r = db.session.get(Review, rid)
+        if r is None:
+            abort(404)
         db.session.delete(r)
         db.session.commit()
         return jsonify({"deleted": True})

@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, abort
 from flask_cors import CORS
 from models import db, User
 import os
@@ -25,7 +25,9 @@ def create_app():
 
     @app.route("/users/<int:uid>", methods=["GET"])
     def get_user(uid):
-        u = User.query.get_or_404(uid)
+        u = db.session.get(User, uid)
+        if u is None:
+            abort(404)
         return jsonify(u.to_dict())
 
     @app.route("/users", methods=["POST"])
@@ -38,7 +40,9 @@ def create_app():
 
     @app.route("/users/<int:uid>", methods=["PUT", "PATCH"])
     def update_user(uid):
-        u = User.query.get_or_404(uid)
+        u = db.session.get(User, uid)
+        if u is None:
+            abort(404)
         data = request.get_json(force=True)
         if "name" in data:
             u.name = data["name"]
@@ -49,7 +53,9 @@ def create_app():
 
     @app.route("/users/<int:uid>", methods=["DELETE"])
     def delete_user(uid):
-        u = User.query.get_or_404(uid)
+        u = db.session.get(User, uid)
+        if u is None:
+            abort(404)
         db.session.delete(u)
         db.session.commit()
         return jsonify({"deleted": True})

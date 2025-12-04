@@ -1,6 +1,6 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, abort
 from flask_cors import CORS
-from models import db, Product
+from .models import db, Product
 import os
 
 def create_app():
@@ -25,7 +25,9 @@ def create_app():
 
     @app.route("/products/<int:pid>", methods=["GET"])
     def get_product(pid):
-        p = Product.query.get_or_404(pid)
+        p = db.session.get(Product, pid)
+        if p is None:
+            abort(404)
         return jsonify(p.to_dict())
 
     @app.route("/products", methods=["POST"])
@@ -43,7 +45,9 @@ def create_app():
 
     @app.route("/products/<int:pid>", methods=["PUT", "PATCH"])
     def update_product(pid):
-        p = Product.query.get_or_404(pid)
+        p = db.session.get(Product, pid)
+        if p is None:
+            abort(404)
         data = request.get_json(force=True)
         for field in ["name", "description"]:
             if field in data:
@@ -57,7 +61,9 @@ def create_app():
 
     @app.route("/products/<int:pid>", methods=["DELETE"])
     def delete_product(pid):
-        p = Product.query.get_or_404(pid)
+        p = db.session.get(Product, pid)
+        if p is None:
+            abort(404)
         db.session.delete(p)
         db.session.commit()
         return jsonify({"deleted": True})

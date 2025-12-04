@@ -1,6 +1,6 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, abort
 from flask_cors import CORS
-from models import db, Order, OrderItem
+from .models import db, Order, OrderItem
 import os
 
 def create_app():
@@ -25,7 +25,9 @@ def create_app():
 
     @app.route("/orders/<int:oid>", methods=["GET"])
     def get_order(oid):
-        o = Order.query.get_or_404(oid)
+        o = db.session.get(Order, oid)
+        if o is None:
+            abort(404)
         return jsonify(o.to_dict())
 
     @app.route("/orders", methods=["POST"])
@@ -49,7 +51,9 @@ def create_app():
 
     @app.route("/orders/<int:oid>", methods=["PUT", "PATCH"])
     def update_order(oid):
-        o = Order.query.get_or_404(oid)
+        o = db.session.get(Order, oid)
+        if o is None:
+            abort(404)
         data = request.get_json(force=True)
         if "status" in data:
             o.status = data["status"]
@@ -67,7 +71,9 @@ def create_app():
 
     @app.route("/orders/<int:oid>", methods=["DELETE"])
     def delete_order(oid):
-        o = Order.query.get_or_404(oid)
+        o = db.session.get(Order, oid)
+        if o is None:
+            abort(404)
         db.session.delete(o)
         db.session.commit()
         return jsonify({"deleted": True})
