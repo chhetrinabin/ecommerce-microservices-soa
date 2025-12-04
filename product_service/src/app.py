@@ -1,7 +1,9 @@
-from flask import Flask, request, jsonify, abort
+from flask import Flask, request, jsonify, abort, g
 from flask_cors import CORS
 from models import db, Product
 import os
+import time
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 
 def create_app():
     app = Flask(__name__)
@@ -13,6 +15,40 @@ def create_app():
     db.init_app(app)
     with app.app_context():
         db.create_all()
+
+    # Prometheus metrics
+    REQUEST_COUNT = Counter(
+        "product_requests_total",
+        "Total HTTP requests",
+        ["method", "endpoint", "http_status"],
+    )
+
+    REQUEST_LATENCY = Histogram(
+        "product_request_latency_seconds",
+        "Request latency in seconds",
+        ["method", "endpoint"],
+    )
+
+    @app.before_request
+    def _start_timer():
+        g._start_time = time.time()
+
+    @app.after_request
+    def _observe_request(response):
+        try:
+            resp_time = time.time() - g._start_time
+        except Exception:
+            resp_time = 0.0
+        endpoint = request.path
+        REQUEST_LATENCY.labels(request.method, endpoint).observe(resp_time)
+        REQUEST_COUNT.labels(request.method, endpoint, str(response.status_code)).inc()
+        return response
+
+    @app.route("/metrics", methods=["GET"])
+    def metrics():
+        # Expose Prometheus metrics
+        data = generate_latest()
+        return data, 200, {"Content-Type": CONTENT_TYPE_LATEST}
 
     @app.route("/health", methods=["GET"])
     def health():
