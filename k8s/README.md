@@ -1,148 +1,176 @@
-# Kubernetes Deployment for E-commerce Microservices
+Kubernetes Manifests for ecommerce-microservices
 
-This directory contains the Kubernetes manifests required to deploy the microservices-based e-commerce application. The deployment utilizes standard Kubernetes resources including Deployments, Services, ConfigMaps, Secrets, and Horizontal Pod Autoscalers (HPA).
+This folder contains Kubernetes manifests for the ecommerce microservices example. The manifests are intended for local development and demonstration on a single-node Kubernetes cluster (Minikube or Kind). They provide namespace, deployments, Services, ConfigMaps, Secrets, and HPA resources for the following services:
 
-## 🏗 Architecture
+- `orders-service` (manifests: `orders-service.yaml`)
+- `product-service` (manifests: `product-service.yaml`, `product-service-nodeport.yaml`)
+- `reviews-service` (manifests: `reviews-service.yaml`)
+- `user-service` (manifests: `user-service.yaml`)
+- cluster-level helper: `00-namespace-config-secrets.yaml` (namespace, ConfigMaps, Secrets)
+- `hpa.yaml` (HorizontalPodAutoscaler resources)
 
-The application consists of four microservices deployed in the `microservices-demo` namespace.
+**Note:** This README documents how to deploy these manifests locally and how to verify basic networking, scaling (HPA), and service discovery.
 
-```mermaid
-graph TD
-    User((User)) -->|NodePort:30001| ProductSVC[Product Service]
-    User -->|ClusterIP| UserSVC[User Service]
-    User -->|ClusterIP| OrdersSVC[Orders Service]
-    User -->|ClusterIP| ReviewsSVC[Reviews Service]
+**Quick file overview:**
+- `00-namespace-config-secrets.yaml` : Creates the `ecommerce` namespace and includes shared ConfigMaps and Secrets used by services.
+- `*-service.yaml` : Deployment + ClusterIP Service for each microservice.
+- `product-service-nodeport.yaml` : NodePort variant for `product-service` (useful for direct access from the host/Minikube).
+- `hpa.yaml` : HPA definitions for the deployments (requires metrics-server).
 
-    subgraph "Kubernetes Cluster (Namespace: microservices-demo)"
-        ProductSVC --> ProductPod(Product Pods)
-        UserSVC --> UserPod(User Pods)
-        OrdersSVC --> OrdersPod(Orders Pods)
-        ReviewsSVC --> ReviewsPod(Reviews Pods)
+**Assumptions**
+- Each service image name/tag referenced in the manifests matches a locally built Docker image or an image available in a registry accessible to your cluster.
+- Services listen on ports defined in each service manifest (see service YAMLs for exact ports).
 
-        Config[ConfigMap: common-config] -.-> ProductPod & UserPod & OrdersPod & ReviewsPod
-        Secret[Secret: common-secret] -.-> ProductPod & UserPod & OrdersPod & ReviewsPod
-        
-        HPA[HPA: CPU > 50%] -.-> ProductPod & UserPod & OrdersPod & ReviewsPod
-    end
+## Prerequisites
+- `kubectl` installed and configured.
+- Either `minikube` (recommended for beginners) or `kind` for a lightweight cluster.
+- `docker` available when building images locally.
+- `metrics-server` installed in the cluster for HPA to work.
+
+## Kind Local Setup
+
+```bash
+kind create cluster --name microservices-demo
 ```
 
-## 📋 Prerequisites
+## Build images locally
 
-- **Kubernetes Cluster**: A running cluster (Minikube, Kind, Docker Desktop, or Cloud Provider).
-- **kubectl**: Command-line tool configured to communicate with your cluster.
-- **Docker Images**: The service images (`product-service`, `user-service`, `orders-service`, `reviews-service`) must be available in your cluster's registry.
-    - *Note: If using Minikube/Kind, ensure you build or load images into the cluster's docker daemon.*
+```bash
+docker build -t product-service:latest ./product_service
+docker build -t user-service:latest ./user_service
+docker build -t orders-service:latest ./orders_service
+docker build -t reviews-service:latest ./reviews_service
+```
 
-## ⚙️ Configuration
+## Load images into kind cluster
 
-### 1. Namespace & Shared Resources
-Defined in `00-namespace-config-secrets.yaml`.
+```bash
+kind load docker-image product-service:latest --name microservices-demo
+kind load docker-image user-service:latest --name microservices-demo
+kind load docker-image orders-service:latest --name microservices-demo
+kind load docker-image reviews-service:latest --name microservices-demo
+```
 
-- **Namespace**: `microservices-demo`
-- **ConfigMap** (`common-config`):
-  - `FLASK_ENV`: "production"
-  - `PYTHONUNBUFFERED`: "1"
-  - Service Ports: 5001-5004
-- **Secret** (`common-secret`):
-  - `SECRET_KEY`: Application secret key (Base64 encoded in cluster).
+## Recommended local setups
 
-### 2. Services Overview
+1) Minikube (easy local Docker image build + NodePort access):
 
-| Service | Internal Port | ClusterIP | NodePort | Replicas (Min/Max) |
-|---------|---------------|-----------|----------|-------------------|
-| **Product** | 5001 | Yes | 30001 | 1 / 5 |
-| **User** | 5002 | Yes | - | 1 / 5 |
-| **Orders** | 5003 | Yes | - | 1 / 5 |
-| **Reviews** | 5004 | Yes | - | 1 / 5 |
+```bash
+minikube start --driver=docker
+eval "$(minikube -p minikube docker-env)"
+# Build images locally so the cluster can use them
+docker build -t user-service:local ./user_service
+docker build -t product-service:local ./product_service
+docker build -t reviews-service:local ./reviews_service
+docker build -t orders-service:local ./orders_service
+```
 
-### 3. Resource Limits & Probes
-All services are configured with the following resource constraints and health checks:
+Then apply manifests (see Apply Manifests below).
 
-- **Resources**:
-  - Requests: `cpu: 100m`, `memory: 128Mi`
-  - Limits: `cpu: 500m`, `memory: 256Mi`
-- **Liveness Probe**: Checks `/health` every 20s (initial delay 30s).
-- **Readiness Probe**: Checks `/health` every 10s (initial delay 10s).
+2) Kind (isolated cluster; load images into the Kind node):
 
-## 🚀 Deployment Steps
+```bash
+# create cluster
+kind create cluster --name microservices-demo
+# build images (on host) and load into kind
+docker build -t user-service:local ./user_service
+kind load docker-image user-service:local --name microservices-demo
+# repeat for other services
+```
 
-### Step 1: Apply Base Configuration
-Create the namespace, config maps, and secrets.
+## Apply manifests
+
+1) Create namespace, ConfigMaps, Secrets first (this file creates namespace `microservices-demo`):
 
 ```bash
 kubectl apply -f 00-namespace-config-secrets.yaml
 ```
 
-### Step 2: Deploy Microservices
-Deploy the application workloads.
+2) Deploy services and supporting resources (from this folder):
 
 ```bash
-kubectl apply -f product-service.yaml
-kubectl apply -f user-service.yaml
 kubectl apply -f orders-service.yaml
+kubectl apply -f product-service.yaml
+kubectl apply -f product-service-nodeport.yaml   # optional, for NodePort access
 kubectl apply -f reviews-service.yaml
-```
-
-### Step 3: Expose Services
-Expose the Product Service externally using NodePort.
-
-```bash
-kubectl apply -f product-service-nodeport.yaml
-```
-
-### Step 4: Enable Autoscaling
-Apply Horizontal Pod Autoscalers.
-
-```bash
+kubectl apply -f user-service.yaml
 kubectl apply -f hpa.yaml
 ```
 
-## ✅ Verification
+Tip: You can apply the whole folder with `kubectl apply -f .` from inside `k8s/`, but creating the namespace first is recommended so other objects target the right namespace.
 
-1. **Check Pod Status**:
-   Ensure all pods are `Running` and ready.
-   ```bash
-   kubectl get pods -n microservices-demo
-   ```
-
-2. **Check Services**:
-   Verify IP addresses and ports.
-   ```bash
-   kubectl get svc -n microservices-demo
-   ```
-
-3. **Access the Application**:
-   - **Minikube**: `minikube service product-service-nodeport -n microservices-demo`
-   - **Docker Desktop/Localhost**: `http://localhost:30001/products`
-
-   Test with curl:
-   ```bash
-   curl http://localhost:30001/products
-   ```
-
-## 📈 Autoscaling (HPA)
-
-The HPA is configured to scale pods between **1 and 5 replicas** based on CPU utilization.
-- **Trigger**: Average CPU utilization > 50%.
-- **Check HPA Status**:
-  ```bash
-  kubectl get hpa -n microservices-demo
-  ```
-
-## 🛠 Troubleshooting
-
-- **Pods Pending**: Check if nodes have enough resources (CPU/Memory) or if a PersistentVolume is missing (not applicable here as we use stateless deployments).
-- **ImagePullBackOff**: Ensure images are built and available locally or in the registry.
-  - For Minikube: `eval $(minikube docker-env) && docker compose build`
-- **Service Unavailable**: Check endpoints.
-  ```bash
-  kubectl get endpoints -n microservices-demo
-  ```
-
-## 🧹 Cleanup
-
-To remove all resources created by this deployment:
+## Verifications and useful commands
+- List namespace resources:
 
 ```bash
-kubectl delete namespace microservices-demo
+kubectl get all -n microservices-demo
+kubectl get configmap,secret -n microservices-demo
 ```
+
+- Check pods & logs:
+
+```bash
+kubectl get pods -n microservices-demo
+kubectl logs -n microservices-demo deployment/user-service
+kubectl describe pod -n microservices-demo <pod-name>
+```
+
+- Services & endpoints:
+
+```bash
+kubectl get svc -n microservices-demo
+kubectl get endpoints -n microservices-demo
+```
+
+- Port-forward a service locally (example for `user-service` on port 5000):
+
+```bash
+kubectl port-forward -n microservices-demo svc/user-service 5000:5000
+# then access http://localhost:5000
+```
+
+- For NodePort (product-service-nodeport), get the node port and use Minikube IP or your node IP:
+
+```bash
+kubectl get svc product-service -n ecommerce
+minikube service product-service --url -n ecommerce   # opens the NodePort in minikube
+```
+
+## HPA and metrics-server
+- HPA requires `metrics-server` to be running in the cluster. To install (Minikube example):
+
+```bash
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+# wait a minute, then check:
+kubectl top nodes
+kubectl top pods -n ecommerce
+```
+
+- Check HPA status:
+
+```bash
+kubectl get hpa -n ecommerce
+kubectl describe hpa -n ecommerce <hpa-name>
+```
+
+## Troubleshooting tips
+- If Pods stay in ImagePullBackOff or ErrImagePull, either push images to a registry accessible to the cluster or load the images into the cluster (for Kind use `kind load docker-image`).
+- If `kubectl top` shows no metrics, confirm `metrics-server` is running and healthy.
+- If services are unreachable, check `kubectl describe svc`, `kubectl get endpoints`, and `kubectl logs` for the relevant pods.
+
+## Suggested next steps
+- Add small helper scripts in this folder:
+	- `deploy.sh` to build images, load them into the cluster (Kind) or use Minikube's Docker environment, and apply manifests.
+	- `teardown.sh` to `kubectl delete -f` the manifests and optionally delete the Kind/Minikube cluster.
+- Optionally configure a local image registry mirror to speed up repeated builds.
+
+## Security notes
+- The `00-namespace-config-secrets.yaml` file contains sample Secrets for local development. Do not commit real credentials to Git.
+
+## Contact / references
+- Kubernetes docs: https://kubernetes.io/docs/
+- Kind: https://kind.sigs.k8s.io/
+- Minikube: https://minikube.sigs.k8s.io/
+
+If you want, I can: add `deploy.sh`/`teardown.sh`, or try to run this locally (I will need permission to run `kind`/`minikube` and `docker` commands). Let me know which environment you prefer (Minikube or Kind) and I will prepare scripts and run instructions.
+# Project Progress - Part 2
