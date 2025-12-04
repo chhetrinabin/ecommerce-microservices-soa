@@ -1,9 +1,14 @@
 import os
+import sys
 import tempfile
+import pathlib
 import pytest
 
-from src.app import create_app
-from src.models import db
+# Ensure the service's `src/` directory is on sys.path when pytest runs from repository root
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent.joinpath('src')))
+
+from app import create_app
+from models import db
 
 
 @pytest.fixture(scope="session")

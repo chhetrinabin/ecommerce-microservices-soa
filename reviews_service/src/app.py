@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify, abort
 from flask_cors import CORS
-from .models import db, Review
+from models import db, Review
 import os
 
 def create_app():
